@@ -1,0 +1,19 @@
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+
+# Local evaluation inputs and generated results
+/data/
+/runs/
+/results/
+
+# Logs and temporary files
+*.log
+/tmp/
+/temp/
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
