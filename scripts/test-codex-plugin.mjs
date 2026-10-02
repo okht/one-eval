@@ -26,7 +26,10 @@ async function execute(label, executable, args, expectedCode = 0, extraEnv = {})
   const child = spawn(executable, args, { cwd: workspace, env: { ...environment, ...extraEnv }, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.setEncoding('utf8').on('data', value => { stdout += value; });
-  child.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
+  child.stderr.setEncoding('utf8').on('data', value => {
+    stderr += value;
+    if (label === 'explicit clean runtime setup') process.stderr.write(value);
+  });
   const timer = setTimeout(() => child.kill(), 600_000);
   let code;
   try { code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }); }

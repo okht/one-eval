@@ -10,6 +10,22 @@ const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 interface Result { code: number | null; stdout: string; stderr: string }
 interface Fixture { directory: string; plugin: string; cache: string; cwd: string; npm: string; log: string }
 
+const fakeCompiler = `
+const fs = require('node:fs');
+(async () => {
+  if (process.env.FAKE_COMPILER_REPORT_PROGRESS) { console.log('fixture compiler stdout progress'); console.error('fixture compiler stderr progress'); }
+  if (process.env.FAKE_COMPILER_RELEASE_FILE) {
+    const deadline = Date.now() + 10000;
+    while (!fs.existsSync(process.env.FAKE_COMPILER_RELEASE_FILE)) {
+      if (Date.now() >= deadline) { console.error('fixture compiler release timeout'); process.exit(18); }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  }
+  if (process.env.FAKE_COMPILER_FAIL) process.exit(19);
+  fs.mkdirSync('dist'); fs.copyFileSync('src/cli.ts', 'dist/cli.js');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+`;
+
 // npm_execpath is the bridge's normal npm resolution input. Each isolated fixture
 // supplies an executable fake npm to test orchestration without network installs.
 const fakeNpm = `
@@ -17,6 +33,7 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }) + '\\n');
 if (process.argv[2] === '--version') { console.log('11.6.2'); process.exit(0); }
+if (process.env.FAKE_NPM_REPORT_PROGRESS) { console.log('fixture npm stdout progress'); console.error('fixture npm stderr progress'); }
 if (process.env.FAKE_NPM_RELEASE_FILE) {
   const deadline = Date.now() + 10000;
   while (!existsSync(process.env.FAKE_NPM_RELEASE_FILE)) {
@@ -30,7 +47,7 @@ mkdirSync('node_modules/typescript/bin', { recursive: true });
 mkdirSync('node_modules/example', { recursive: true });
 writeFileSync('node_modules/typescript/package.json', JSON.stringify({ name: 'typescript', version: '5.9.3' }));
 writeFileSync('node_modules/example/package.json', JSON.stringify({ name: 'example', version: '1.0.0' }));
-writeFileSync('node_modules/typescript/bin/tsc', ${JSON.stringify(`if (process.env.FAKE_COMPILER_FAIL) process.exit(19); const fs = require('node:fs'); fs.mkdirSync('dist'); fs.copyFileSync('src/cli.ts', 'dist/cli.js');`)});
+writeFileSync('node_modules/typescript/bin/tsc', ${JSON.stringify(fakeCompiler)});
 console.log('fixture install complete');
 `;
 
@@ -56,12 +73,12 @@ async function fixture(): Promise<Fixture> {
   return { directory, plugin, cache, cwd, npm, log };
 }
 
-function invoke(f: Fixture, args: string[], environment: Record<string, string> = {}): Promise<Result> {
+function invoke(f: Fixture, args: string[], environment: Record<string, string> = {}, onOutput?: (stream: 'stdout' | 'stderr', text: string) => void): Promise<Result> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(f.plugin, 'scripts', 'codex-plugin.mjs'), ...args], { cwd: f.cwd, env: { ...process.env, npm_execpath: f.npm, FAKE_NPM_LOG: f.log, ONE_EVAL_PLUGIN_CACHE_DIR: f.cache, ...environment }, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''; let stderr = '';
-    child.stdout.setEncoding('utf8').on('data', text => { stdout += text; });
-    child.stderr.setEncoding('utf8').on('data', text => { stderr += text; });
+    child.stdout.setEncoding('utf8').on('data', text => { stdout += text; onOutput?.('stdout', text); });
+    child.stderr.setEncoding('utf8').on('data', text => { stderr += text; onOutput?.('stderr', text); });
     child.once('error', reject);
     child.once('close', code => resolve({ code, stdout, stderr }));
   });
@@ -126,6 +143,40 @@ test('plugin setup installs only allowlisted inputs and delegates exact argument
     assert.equal((await calls(f)).filter(call => call.args[0] === 'ci').length, 1);
     assert.equal((await readdir(f.cache)).filter(file => file.startsWith('.')).length, 0);
   } finally { await rm(f.directory, { recursive: true, force: true }); }
+});
+
+for (const stage of ['npm', 'compiler'] as const) test(`setup streams ${stage} progress to stderr while the child is still running and emits one final JSON stdout`, async () => {
+  const f = await fixture();
+  const release = path.join(f.directory, `release-${stage}`);
+  const prefix = `FAKE_${stage.toUpperCase()}`;
+  const stdoutProgress = `fixture ${stage} stdout progress`;
+  const stderrProgress = `fixture ${stage} stderr progress`;
+  let setup: Promise<Result> | undefined;
+  let completed = false;
+  const observed = { stdout: '', stderr: '' };
+  try {
+    setup = invoke(f, ['setup'], { [`${prefix}_REPORT_PROGRESS`]: '1', [`${prefix}_RELEASE_FILE`]: release }, (stream, text) => { observed[stream] += text; })
+      .then(result => { completed = true; return result; });
+    const deadline = Date.now() + 5000;
+    while (!observed.stderr.includes(stdoutProgress) || !observed.stderr.includes(stderrProgress)) {
+      assert.equal(completed, false, `Setup completed before ${stage} progress could be observed`);
+      assert.ok(Date.now() < deadline, `Expected live ${stage} progress; received stderr: ${observed.stderr}`);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(completed, false, `${stage} is still blocked on its release file`);
+    assert.equal(observed.stdout, '', 'Setup must not expose child logs on its JSON response channel');
+    await writeFile(release, 'continue');
+    const result = await setup;
+    assert.equal(response(result).runtime.ready, true);
+    assert.equal(result.stderr.split(stdoutProgress).length - 1, 1);
+    assert.equal(result.stderr.split(stderrProgress).length - 1, 1);
+    assert.equal(result.stderr.match(/fixture install complete/g)?.length, 1);
+    assert.match(result.stderr, /Building the one-eval runtime/);
+  } finally {
+    await writeFile(release, 'continue');
+    await setup;
+    await rm(f.directory, { recursive: true, force: true });
+  }
 });
 
 test('source, dependency lock and template edits select a new runtime without reusing old builds', async () => {

@@ -21,7 +21,7 @@ No target model or LLM judge calls were made for these checks. Offline fixture s
 
 The first public CI run stopped during dependency installation because npm 10.9.9 and 11.19.0 required peer/optional lock entries absent from the previous lockfile. The repaired lock adds 15 entries without changing existing package versions or direct dependencies. Clean installations with both npm versions passed, followed by typechecking, compilation and 11 provider/integration regression tests.
 
-CI now runs the clean plugin installation workflow with Codex CLI 0.144.6, alongside the ordinary suite and CLI tarball check, on Windows and Ubuntu with Node.js 22 and 24. Consult GitHub Actions for the result of a particular commit; local acceptance alone does not establish that matrix result.
+CI now runs the clean plugin installation workflow alongside the ordinary suite and CLI tarball check, on Windows and Ubuntu with Node.js 22 and 24. The installation summary records the exact Codex client used. CI installs a global 0.144.6 fallback; on Ubuntu, npm's PATH resolves the lockfile's local 0.153.4 client. Consult GitHub Actions for the result of a particular commit; local acceptance alone does not establish that matrix result.
 
 The first plugin matrix also exposed platform-specific test assumptions: Windows runners can supply an 8.3 temporary-directory alias, while adapters use its canonical path; Linux can retain a terminated process as a zombie PID. Tests now compare canonical directory identities and check bounded process termination with state diagnostics. A live process remains a failure. These changes retain the production isolation and termination behavior.
 

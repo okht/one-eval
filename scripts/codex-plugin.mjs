@@ -139,9 +139,12 @@ async function npmCommand() {
   throw new Error('npm was not found. Install Node.js with npm or provide its JavaScript CLI through npm_execpath.');
 }
 
-function child(command, args, { cwd, capture = false, timeout } = {}) {
+function child(command, args, { cwd, capture = false, diagnostics = false, timeout } = {}) {
   return new Promise((resolve, reject) => {
-    const subprocess = spawn(command, args, { cwd, env: process.env, shell: false, windowsHide: true, stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['inherit', 'inherit', 'inherit'] });
+    // Setup diagnostics go directly to the parent's stderr descriptor. This
+    // streams both child channels without retaining or replaying their output.
+    const stdio = capture ? ['ignore', 'pipe', 'pipe'] : diagnostics ? ['ignore', 2, 2] : ['inherit', 'inherit', 'inherit'];
+    const subprocess = spawn(command, args, { cwd, env: process.env, shell: false, windowsHide: true, stdio });
     let stdout = ''; let stderr = '';
     if (capture) {
       subprocess.stdout.setEncoding('utf8').on('data', text => { stdout += text; });
@@ -211,16 +214,13 @@ async function setup() {
     }
     if (JSON.stringify(await inventory(stage, state.inputs.map(entry => entry.file))) !== JSON.stringify(state.inputs)) throw new Error('Plugin source changed while setup was copying it; retry with a stable source checkout');
     process.stderr.write('Installing the locked one-eval runtime with lifecycle scripts disabled.\n');
-    // npm output is sent to stderr so setup stdout remains a single structured response.
-    const installation = await child(npm.command, [...npm.prefix, 'ci', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund'], { cwd: stage, capture: true });
-    if (installation.stdout) process.stderr.write(installation.stdout);
-    if (installation.stderr) process.stderr.write(installation.stderr);
+    // Keep installation progress visible while preserving one JSON stdout value.
+    const installation = await child(npm.command, [...npm.prefix, 'ci', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund'], { cwd: stage, diagnostics: true });
     if (installation.code !== 0) throw new Error(`npm ci failed with exit ${installation.code}; no runtime was activated`);
     const compiler = path.join(stage, 'node_modules', 'typescript', 'bin', 'tsc');
     await regularFile(compiler, stage);
-    const build = await child(process.execPath, [compiler, '-p', path.join(stage, 'tsconfig.json')], { cwd: stage, capture: true });
-    if (build.stdout) process.stderr.write(build.stdout);
-    if (build.stderr) process.stderr.write(build.stderr);
+    process.stderr.write('Building the one-eval runtime.\n');
+    const build = await child(process.execPath, [compiler, '-p', path.join(stage, 'tsconfig.json')], { cwd: stage, diagnostics: true });
     if (build.code !== 0) throw new Error(`TypeScript build failed with exit ${build.code}; no runtime was activated`);
     await regularFile(path.join(stage, 'dist', 'cli.js'), stage);
     if ((await sourceState()).key !== state.key) throw new Error('Plugin source changed during setup; retry with a stable source checkout');
