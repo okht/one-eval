@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, copyFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +15,67 @@ async function fixture(options:Record<string,unknown>={},execution:Record<string
   const config=path.join(directory,'eval.json');
   await writeFile(config,JSON.stringify({version:1,name:'test',cases,target:{kind:'module',path:modulePath,config:{log,...options},isolation:{mode:'managed',scope:'shared',evidence:'Local test state'},retrySafe:true},execution:{repeats:1,concurrency:1,timeoutMs:3000,...execution}}));
   return {directory,config,modulePath,log,run:path.join(directory,'run'),readLog:async()=> (await readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line))};
+}
+
+function deferred<T>() {
+  let resolve!:(value:T|PromiseLike<T>)=>void;
+  const promise=new Promise<T>(fulfill=>{resolve=fulfill;});
+  return {promise,resolve};
+}
+
+async function controlledTimeoutFixture(t:TestContext) {
+  const f=await fixture({}, {timeoutMs:40});
+  const entered=deferred<AbortSignal>();
+  const release=deferred<void>();
+  const returned=deferred<void>();
+  const events:Array<{event:string;caseId?:string}>=[];
+  const key=Symbol.for(f.directory);
+  const controls=globalThis as unknown as Record<symbol,unknown>;
+  controls[key]={entered:entered.resolve,release:release.promise,returned:returned.resolve,events};
+  await writeFile(f.modulePath,`
+    const control=globalThis[Symbol.for(${JSON.stringify(f.directory)})];
+    export function createTarget() {
+      return {
+        async prepare(context) { control.events.push({event:'prepare',caseId:context.caseId}); return context.sessionId; },
+        async verify() { return {ok:true,evidence:'Controlled fresh test session'}; },
+        async execute(messages,session,context) {
+          control.events.push({event:'execute',caseId:context.caseId});
+          control.entered(context.signal);
+          await control.release;
+          // Deliberately ignore cancellation and return a successful late answer.
+          control.events.push({event:'returned',caseId:context.caseId});
+          control.returned();
+          return {output:'late answer',metadata:{late:true}};
+        },
+        async cleanup() { control.events.push({event:'cleanup'}); },
+        async recover() { control.events.push({event:'recover'}); return {ok:true,evidence:'Released test operation has settled'}; },
+        async close() { control.events.push({event:'close'}); }
+      };
+    }
+  `);
+  const prepared=await preparePlan(f.config);
+  t.mock.timers.enable({apis:['setTimeout']});
+  t.after(async()=> {
+    release.resolve();
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    delete controls[key];
+  });
+  return {...f,events,async runUntilTimedOut() {
+    const running=runEvaluation(prepared,f.run);
+    const signal=await Promise.race([entered.promise,running.then(()=>{throw new Error('Trial ended before the execute-entry barrier');})]);
+    // No deadline can elapse while prepare, verify and artifact writes run.
+    t.mock.timers.tick(40);
+    assert.equal(signal.aborted,true);
+    // Allow the rejection handler to arm its bounded cancellation grace timer.
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    t.mock.timers.tick(100);
+    return running;
+  },async releaseLateAnswer() {
+    release.resolve();
+    await returned.promise;
+    // Drain the conversation and pending-operation promise continuations.
+    await new Promise<void>(resolve=>setImmediate(resolve));
+  }};
 }
 
 test('repeated cases have fresh sessions; completed attempts are skipped on resume',async()=> {
@@ -108,13 +169,21 @@ test('partial multi-turn traces survive a later target failure',async()=> {
   assert.equal(artifact.messages[1]?.content,'a:1');assert.equal(artifact.messages[2]?.content,'second');
 });
 
-test('timeouts block later calls and ignore late completions',async()=> {
-  const f=await fixture({delayMs:120},{timeoutMs:40});
-  const result=await runEvaluation(await preparePlan(f.config),f.run);
-  assert.equal(result.blocked,true);assert.equal(result.pending,1);
-  await new Promise(resolve=>setTimeout(resolve,150));
-  assert.equal((await listArtifacts(f.run))[0]?.status,'execution_error');
-  assert.equal((await f.readLog()).filter(x=>x.event==='execute').length,1);
+test('timeouts block later calls and ignore late completions',{timeout:10000},async(t)=> {
+  const f=await controlledTimeoutFixture(t);
+  const result=await f.runUntilTimedOut();
+  assert.equal(result.blocked,true);assert.equal(result.failed,1);assert.equal(result.pending,1);
+  const before=await listArtifacts(f.run);
+  assert.equal(before.length,1);
+  assert.equal(before[0]?.status,'execution_error');
+  assert.equal(before[0]?.diagnostic?.code,'timeout');
+  assert.equal(before[0]?.output,undefined);
+  assert.deepEqual(f.events.filter(x=>x.event==='execute'),[{event:'execute',caseId:'a'}]);
+  await f.releaseLateAnswer();
+  assert.deepEqual(f.events.filter(x=>x.event==='returned'),[{event:'returned',caseId:'a'}]);
+  assert.deepEqual(await listArtifacts(f.run),before,'A successful late answer must not overwrite the timeout artifact');
+  assert.deepEqual(f.events.filter(x=>x.event==='execute'),[{event:'execute',caseId:'a'}]);
+  assert.equal((await readRunState(f.run)).blocked,true);
 });
 
 test('changing source code prevents resume before any new execution',async()=> {
@@ -174,15 +243,19 @@ test('failed recovery close keeps the environment blocked',async()=> {
   assert.equal((await readRunState(f.run)).blocked,true);
 });
 
-test('unsettled target cancellation blocks cleanup and recovery in the owning process',async()=> {
-  const f=await fixture({delayMs:600},{timeoutMs:40});
-  const result=await runEvaluation(await preparePlan(f.config),f.run);assert.equal(result.blocked,true);
+test('unsettled target cancellation blocks cleanup and recovery in the owning process',{timeout:10000},async(t)=> {
+  const f=await controlledTimeoutFixture(t);
+  const result=await f.runUntilTimedOut();assert.equal(result.blocked,true);
+  assert.equal(result.failed,1);assert.equal(result.pending,1);
   assert.equal((await readRunState(f.run)).activeProcess,process.pid);
-  assert.equal((await f.readLog()).filter(x=>x.event==='cleanup').length,0);
+  assert.equal(f.events.filter(x=>x.event==='cleanup'||x.event==='close').length,0);
   await assert.rejects(()=>recoverEvaluation(f.run),/still active/);
   if(process.platform==='win32')await assert.rejects(()=>recoverEvaluation(f.run.toUpperCase()),/still active/);
-  await new Promise(resolve=>setTimeout(resolve,650));
+  assert.equal(f.events.filter(x=>x.event==='recover').length,0);
+  await f.releaseLateAnswer();
   await recoverEvaluation(f.run);assert.equal((await readRunState(f.run)).blocked,false);
+  assert.equal(f.events.filter(x=>x.event==='recover').length,1);
+  assert.deepEqual(f.events.filter(x=>x.event==='execute'),[{event:'execute',caseId:'a'}]);
 });
 
 test('a same-process source change is rejected before a new run can use cached imports',async()=> {
