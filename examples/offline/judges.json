@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "judges": [
+    { "id": "reference-check-a", "kind": "command", "command": "node", "args": ["./grade.mjs"], "repeats": 3, "weight": 1 },
+    { "id": "reference-check-b", "kind": "command", "command": "node", "args": ["./grade.mjs"], "repeats": 3, "weight": 1 }
+  ],
+  "concurrency": 2,
+  "timeoutMs": 10000
+}

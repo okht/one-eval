@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "judges": [
+    { "id": "offline-llm", "kind": "llm", "provider": "file://./mock-judge.cjs", "prompt": "Use the case, reference, saved output and trace to assess correctness. Return a score in [0, 1] and a reason.", "repeats": 3, "weight": 1 }
+  ],
+  "concurrency": 2,
+  "timeoutMs": 10000
+}

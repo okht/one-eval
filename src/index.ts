@@ -1,0 +1,16 @@
+export { preparePlan, prepareGrading, getConfigSchemas } from './config.js';
+export { runEvaluation, runFormalEvaluation, resumeEvaluation, recoverEvaluation } from './execution.js';
+export { gradeEvaluation, gradeFormalEvaluation } from './grading.js';
+export { buildReport } from './report.js';
+export { compareRuns } from './compare.js';
+export { probeExecution, calibrateGrading, getCalibrationFixturesSchema } from './preflight.js';
+export type { ExecutionProbeResult, GradingCalibrationResult, CalibrationFixture, CalibrationFixtures } from './preflight.js';
+export { classifyError } from './diagnostics.js';
+export type { Diagnostic } from './diagnostics.js';
+export type * from './types.js';
+export { getRuntimeProvenance } from './provenance.js';
+export type { RuntimeProvenance } from './provenance.js';
+export { generateStarter } from './scaffold.js';
+export type { StarterOptions, StarterResult, StarterTemplate } from './scaffold.js';
+export { verifyAdmissionReceipt, getAdmissionReceiptSchema } from './admission.js';
+export type { AdmissionOptions, AdmissionRecord, AdmissionReceipt } from './admission.js';

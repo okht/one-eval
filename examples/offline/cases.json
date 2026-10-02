@@ -1,0 +1,23 @@
+[
+  {
+    "id": "remember-budget",
+    "input": "My budget is 300. Remember it.",
+    "reference": { "contains": "Your budget is 300." },
+    "weight": 1,
+    "conversation": { "mode": "scripted", "turns": ["What is my budget?"] }
+  },
+  {
+    "id": "refund-order",
+    "input": "Please refund order order-123.",
+    "reference": { "contains": "Order order-123 has been refunded." },
+    "weight": 1,
+    "conversation": {
+      "mode": "simulated",
+      "goal": "Get a refund for order order-123.",
+      "facts": { "orderId": "order-123", "refundReason": "wrong size" },
+      "constraints": ["Only provide the refund reason when asked.", "Finish once the refund is confirmed."],
+      "provider": "file://./simulator.cjs",
+      "maxTurns": 4
+    }
+  }
+]

@@ -17,3 +17,11 @@
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Build output and dependencies
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.venv-benchmarks/
+__pycache__/

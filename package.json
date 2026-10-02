@@ -1,0 +1,63 @@
+{
+  "name": "one-eval",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Isolated, repeatable evaluations with independent multi-model judging",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "bin": {
+    "one-eval": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "templates/",
+    "examples/offline/",
+    "examples/openai-compatible/",
+    "docs/agent-guide.md",
+    "docs/usage.md",
+    "docs/implementation-contract.md",
+    "docs/preflight.md",
+    "docs/reliability.md",
+    "docs/admission.md",
+    "docs/integrations.md",
+    "docs/distribution.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test:unit": "node scripts/test-suite.mjs unit",
+    "test:integration": "node scripts/test-suite.mjs integration",
+    "test:ci": "node scripts/test-suite.mjs all --strict",
+    "prepare:ci": "node scripts/prepare-ci-benchmarks.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "prepack": "npm run build",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0-alpha.4",
+    "promptfoo": "0.123.1",
+    "proper-lockfile": "4.1.2",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/proper-lockfile": "4.1.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

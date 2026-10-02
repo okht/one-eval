@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "judges": [{
+    "id": "correctness",
+    "kind": "llm",
+    "provider": {
+      "id": "openai:chat:REPLACE_WITH_JUDGE_MODEL_ID",
+      "config": { "apiBaseUrl": "${ENV:JUDGE_API_BASE_URL}", "apiKey": "${ENV:JUDGE_API_KEY}", "temperature": 0 }
+    },
+    "prompt": "Evaluate whether the saved response correctly answers the original question, using the reference when available. Return a score in [0, 1] and explain the judgment. If the evidence is insufficient, return insufficient_evidence.",
+    "repeats": 3,
+    "weight": 1
+  }],
+  "concurrency": 1,
+  "timeoutMs": 60000
+}

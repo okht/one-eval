@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "Offline multi-turn evaluation",
+  "cases": "./cases.json",
+  "target": {
+    "kind": "module",
+    "path": "./target.mjs",
+    "isolation": {
+      "mode": "managed",
+      "scope": "independent",
+      "evidence": "The fixture creates one in-memory order and memory store per session and verifies fresh state."
+    },
+    "retrySafe": true
+  },
+  "execution": { "repeats": 3, "concurrency": 2, "timeoutMs": 10000 }
+}

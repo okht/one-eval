@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "OpenAI-compatible stateless endpoint",
+  "cases": [{ "id": "arithmetic", "input": "What is 2 + 2?", "reference": "4", "weight": 1 }],
+  "target": {
+    "kind": "provider",
+    "provider": {
+      "id": "openai:chat:REPLACE_WITH_TARGET_MODEL_ID",
+      "config": { "apiBaseUrl": "${ENV:TARGET_API_BASE_URL}", "apiKey": "${ENV:TARGET_API_KEY}", "temperature": 0 }
+    },
+    "isolation": { "mode": "stateless", "scope": "independent", "evidence": "REPLACE: document why the configured endpoint uses only the supplied messages and has no persistent shared memory." },
+    "retrySafe": true
+  },
+  "execution": { "repeats": 3, "concurrency": 1, "timeoutMs": 60000 }
+}

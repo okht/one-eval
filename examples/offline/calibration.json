@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "fixture-a",
+      "label": "positive",
+      "input": "Return the result READY.",
+      "reference": { "contains": "READY" },
+      "output": "Result: READY",
+      "expected": { "status": "scored", "minScore": 1, "maxScore": 1 }
+    },
+    {
+      "id": "fixture-b",
+      "label": "negative",
+      "input": "Return the result READY.",
+      "reference": { "contains": "READY" },
+      "output": "FAILED",
+      "expected": { "status": "scored", "minScore": 0, "maxScore": 0 }
+    },
+    {
+      "id": "fixture-c",
+      "label": "edge",
+      "input": "Return the result READY.",
+      "reference": { "contains": "READY" },
+      "output": "",
+      "expected": { "status": "scored", "minScore": 0, "maxScore": 0 }
+    },
+    {
+      "id": "fixture-d",
+      "label": "edge",
+      "input": "Answer without a provided reference rule.",
+      "output": "An answer",
+      "expected": { "status": "insufficient_evidence" }
+    }
+  ]
+}

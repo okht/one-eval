@@ -1,0 +1,27 @@
+# Implementation contract
+
+The TypeScript types in `src/types.ts` are the shared contract. Repository code and documentation use English. The public core operations are:
+
+- `preparePlan(configPath): Promise<PreparedPlan>` (`src/config.ts`): JSON input with `cases` as an array or JSON/JSONL path. Normalize defaults, resolve paths, hash referenced source files.
+- `prepareGrading(configPath): Promise<PreparedGrading>` (`src/config.ts`): independent judge config, never load a target.
+- `runEvaluation(prepared, directory, {mode?, receipt?}): Promise<RunSummary>` and `resumeEvaluation(directory, {retryErrors?, mode?, receipt?}): Promise<RunSummary>` (`src/execution.ts`). New low-level operations default to exploratory; resume preserves the recorded mode.
+- `runFormalEvaluation(prepared, directory, receipt)` and `gradeFormalEvaluation(directory, preparedGrading, receipt)` require verified admission inside the library API.
+- `recoverEvaluation(directory): Promise<RunSummary>`: explicit recovery via adapter; stateless providers establish a new context. Never silently rerun completed writes.
+- `gradeEvaluation(directory, preparedGrading, {retryErrors?, mode?, receipt?}): Promise<unknown>` (`src/grading.ts`). New low-level grading defaults to exploratory; repeated calls preserve the recorded mode.
+- `buildReport(directory, gradingVersion?): Promise<unknown>` (`src/report.ts`).
+- `probeExecution`, `calibrateGrading` and `verifyAdmissionReceipt` create/check separate execution and grading evidence. See [admission.md](admission.md) for the exact binding and renewal contract.
+- `generateStarter` creates an offline, OpenAI-compatible, HTTP or managed starting directory without contacting a service. `getRuntimeProvenance` identifies the local runtime and installed direct dependencies.
+
+Adapters (`src/adapters.ts`): `loadTarget(config, baseDir): Promise<TargetAdapter>` and `runConversation(case, adapter, session, context, onMessages): Promise<ConversationResult>`. `onMessages(messages)` is async and must be awaited after each turn, preserving partial traces. Provider loader uses Promptfoo with caching disabled; module adapter exports `createTarget(config)` or a default adapter object. Every trial supplies a fresh context and session ID. The execution module owns timeout, state, prepare/verify/cleanup, and fail-closed decisions.
+
+Promptfoo bridge (`src/engine.ts`): `schedule<T>(items:T[], concurrency:number, perform:(item:T)=>Promise<void>): Promise<void>` schedules one custom provider call per item, with no assertions, no cache and no database/UI. `loadProvider(spec,baseDir)` returns a Promptfoo provider. One scheduling engine for execution and grading. Engine-owned internal IDs must not change business IDs. Do not use `providerOutput` for regrading.
+
+Storage (`src/storage.ts`): exports `hash(value)`, `readJson<T>(path)`, `writeJson(path,value)` (atomic), `readManifest(directory)`, `readRunState(directory)`, `writeRunState(directory,state)`, `listArtifacts(directory)`, `writeArtifact(directory,artifact)`, `latestArtifacts(artifacts)`, `withRunLock(directory, callback)`, `verifyFiles(files)`. Artifact filenames are derived from generated IDs and attempt numbers. Output hash is `hash({output,messages,metadata})` excluding undefined fields. Write each state change before another I/O can start. Prepared configuration and completed attempt evidence stay fixed; explicit receipt renewal updates admission while preserving `admissionHistory`.
+
+Grading persists under `grades/<versionHash>/manifest.json` and immutable `records/<id>.json`; records include execution attempt and output hash. Grade IDs hash the trial/attempt/judge/repeat/grade-attempt identities. Store a separate grading source/config snapshot. Use `listArtifacts`, choose latest attempt per trial, and grade only valid `completed` artifacts. Validate output hashes before grading and reporting. A missing/corrupt artifact must not disappear from coverage. The manifest's case count times repeats supplies the execution denominator.
+
+CLI (`src/cli.ts`): `init`, `schema`, `version`, `validate`, `probe`, `run`, `resume`, `recover`, `calibrate`, `grade`, `report` and `compare` provide JSON stdout for agent callers; errors go to stderr and nonzero exit. See structured `--help` for full arguments. `run` and `grade` default to formal admission and accept their respective receipt flags; `--mode exploratory` is explicit. No GUI. `run` does not auto-grade, making scoring independently configurable.
+
+Scoring scripts are executable commands, invoked without shell interpolation, with one JSON `GradeInput` on stdin and one `GradeValue` JSON on stdout. Use a controlled per-call cwd, bounded execution and no target adapter import. Scripts are trusted executable code; OS sandboxing is not provided in this first implementation. External dependencies/file imports require explicit `files` config entries to freeze them. LLM grading uses a fresh prompt per grade and parses the same score schema (0..1). Existing target and judge API credentials come through environment references, never inline secrets in committed examples.
+
+Meaningful tests include no target calls on regrade (empty strings included), isolation/cleanup failure blocking, session independence, persisted partial results, abort handling, version mismatch on resume, score identity, missing-grade denominators and weighting. SDK/example documentation must be honest about declared vs verified remote isolation.
