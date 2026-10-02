@@ -11,7 +11,7 @@ Verified on Windows with Node.js 24.13.0:
 - The installed bridge completed a formal offline workflow: two cases repeated twice, four execution records, four calibration checks and four grades, with a complete report.
 - A missing execution receipt was rejected. Disabling the target module after execution did not prevent independent calibration, grading or reporting. Resume and repeat grading retained existing completed records.
 - Paths containing spaces and the caller's working directory were preserved. Required skill, source, templates and lockfile were present; private data, run outputs and prebuilt dependencies were absent from the clean installation.
-- `npm run typecheck` and `npm run build` passed. The strict regression suite passed **222/222 tests**, with no failures or skips. It includes ten new plugin runtime tests and the existing 900-trial/3,600-grade stress regression.
+- `npm run typecheck` and `npm run build` passed. The strict regression suite passed **224/224 tests**, with no failures or skips. It includes twelve plugin runtime tests and the existing 900-trial/3,600-grade stress regression. Two tests verify that installation and compiler progress arrive on stderr before completion while stdout remains one final JSON response.
 - Skill frontmatter validation and a separate integration review passed. The installation check asserts the expected plugin ID, installed path and enabled state.
 - The CLI tarball also passed a clean consumer installation: executable entrypoint, ESM exports, TypeScript declarations, templates, six formal execution records and 36 saved-answer grades.
 
@@ -24,6 +24,8 @@ The first public CI run stopped during dependency installation because npm 10.9.
 CI now runs the clean plugin installation workflow alongside the ordinary suite and CLI tarball check, on Windows and Ubuntu with Node.js 22 and 24. The installation summary records the exact Codex client used. CI installs a global 0.144.6 fallback; on Ubuntu, npm's PATH resolves the lockfile's local 0.153.4 client. Consult GitHub Actions for the result of a particular commit; local acceptance alone does not establish that matrix result.
 
 The first plugin matrix also exposed platform-specific test assumptions: Windows runners can supply an 8.3 temporary-directory alias, while adapters use its canonical path; Linux can retain a terminated process as a zombie PID. Tests now compare canonical directory identities and check bounded process termination with state diagnostics. A live process remains a failure. These changes retain the production isolation and termination behavior.
+
+A subsequent Windows runner check exposed unusually slow dependency extraction into its default system temporary directory. All 832 package downloads were cache hits; installation was still making progress when its 600-second bound expired. A controlled run changed only the test's temporary-directory base to GitHub's `RUNNER_TEMP`, retaining the same runtime key, npm cache, dependency versions and timeout. Setup then completed in 51.3 seconds, including 48.0 seconds for npm, and the formal evaluation workflow passed. CI installation checks use the runner scratch directory. User runtime-cache defaults remain unchanged; the evidence does not isolate the underlying disk or system-scanning cause.
 
 ## Evidence and limits
 

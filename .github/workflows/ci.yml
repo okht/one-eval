@@ -39,5 +39,14 @@ jobs:
       - run: npm run build
       - run: npm run test:ci
       - run: npm install --global --ignore-scripts @openai/codex@0.144.6
+      # The hosted Windows runner repeatedly unpacked cached dependencies slowly in C: system temp.
+      - name: Use runner scratch for Windows installation checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $taskScratch = $env:RUNNER_TEMP
+          if (-not (Test-Path -LiteralPath $taskScratch -PathType Container)) { throw 'RUNNER_TEMP must identify an existing directory' }
+          "TEMP=$taskScratch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TMP=$taskScratch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: npm run test:plugin
       - run: npm run test:package
