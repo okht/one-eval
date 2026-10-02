@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -101,7 +101,7 @@ test('Codex adapter uses fresh directories and threads, and passes only user con
     const session = await adapter.prepare(context);
     directories.push(session.directory);
     assert.equal((await adapter.verify(session, context)).ok, true);
-    assert.equal(path.dirname(session.directory), path.resolve(tmpdir()));
+    assert.equal(path.dirname(session.directory), await realpath(tmpdir()));
     const output = await adapter.execute([{ role: 'user', content: `Question ${index}\nUnicode: 中文` }], session, context);
     assert.equal(output.output, `result:Question ${index}\nUnicode: 中文`);
     assert.equal(output.metadata.cliVersion, 'codex-cli 0.144.6');

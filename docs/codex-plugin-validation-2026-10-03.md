@@ -23,6 +23,8 @@ The first public CI run stopped during dependency installation because npm 10.9.
 
 CI now runs the clean plugin installation workflow with Codex CLI 0.144.6, alongside the ordinary suite and CLI tarball check, on Windows and Ubuntu with Node.js 22 and 24. Consult GitHub Actions for the result of a particular commit; local acceptance alone does not establish that matrix result.
 
+The first plugin matrix also exposed platform-specific test assumptions: Windows runners can supply an 8.3 temporary-directory alias, while adapters use its canonical path; Linux can retain a terminated process as a zombie PID. Tests now compare canonical directory identities and check bounded process termination with state diagnostics. A live process remains a failure. These changes retain the production isolation and termination behavior.
+
 ## Evidence and limits
 
 Local evidence is retained under `results/plugin-20261003`, `results/plugin-ci-20261003`, and timestamped `results/plugin-installation-*` directories. Those ignored directories contain detailed commands, runtime identity and temporary installation/workspace locations. They are not bundled or published as plugin content.

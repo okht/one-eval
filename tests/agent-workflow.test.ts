@@ -20,6 +20,40 @@ async function temporary(t: any) {
   return directory;
 }
 
+interface ProcessState { pid: number; stopped: boolean; state: string }
+
+async function processState(pid: number): Promise<ProcessState> {
+  try { process.kill(pid, 0); }
+  catch (error: any) {
+    if (error.code === 'ESRCH') return { pid, stopped: true, state: 'absent' };
+    throw error;
+  }
+  if (process.platform !== 'linux') return { pid, stopped: false, state: 'exists' };
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+    // The command name can contain spaces and parentheses. The state follows its final ')'.
+    const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+    assert.match(state ?? '', /^[A-Za-z]$/, `Unexpected process stat for PID ${pid}: ${stat}`);
+    // Linux retains killed children as zombies until their new parent reaps them.
+    // kill(pid, 0) still succeeds for these terminal, non-executing processes.
+    return { pid, stopped: state === 'Z' || state === 'X', state: `linux:${state}` };
+  } catch (error: any) {
+    if (error.code === 'ENOENT') return { pid, stopped: true, state: 'absent' };
+    throw error;
+  }
+}
+
+async function waitForStopped(pids: number[], graceMs = 2000): Promise<ProcessState[]> {
+  const deadline = performance.now() + graceMs;
+  let states: ProcessState[];
+  do {
+    states = await Promise.all(pids.map(processState));
+    if (states.every(state => state.stopped)) return states;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  } while (performance.now() < deadline);
+  assert.fail(`Processes are still active after ${graceMs} ms: ${JSON.stringify(states)}`);
+}
+
 async function client(directory: string) {
   const child = spawn(process.execPath, [path.join(folder, 'server.mjs'), path.join(directory, 'orders.json'), path.join(directory, 'audit.jsonl'), '1'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let buffer = ''; let next = 0; let stderr = '';
@@ -181,9 +215,14 @@ setInterval(()=>{},1000);
     catch { await new Promise(resolve => setTimeout(resolve, 25)); }
   }
   assert.ok(pids, 'real MCP child completed initialization before cancellation');
+  for (const pid of [process.pid, pids.parent, pids.child]) {
+    const live = await processState(pid);
+    assert.equal(live.stopped, false, `Live process must not count as stopped: ${JSON.stringify(live)}`);
+  }
   controller.abort();
   await rejected;
-  for (const pid of [pids.parent, pids.child]) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  const stopped = await waitForStopped([pids.parent, pids.child]);
+  t.diagnostic(`Observed process termination: ${JSON.stringify(stopped)}`);
   await adapter.cleanup(session, context);
   await assert.rejects(access(session.directory), { code: 'ENOENT' });
 });

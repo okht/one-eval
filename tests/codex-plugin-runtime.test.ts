@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,10 +13,17 @@ interface Fixture { directory: string; plugin: string; cache: string; cwd: strin
 // npm_execpath is the bridge's normal npm resolution input. Each isolated fixture
 // supplies an executable fake npm to test orchestration without network installs.
 const fakeNpm = `
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }) + '\\n');
 if (process.argv[2] === '--version') { console.log('11.6.2'); process.exit(0); }
+if (process.env.FAKE_NPM_RELEASE_FILE) {
+  const deadline = Date.now() + 10000;
+  while (!existsSync(process.env.FAKE_NPM_RELEASE_FILE)) {
+    if (Date.now() >= deadline) { console.error('fixture release timeout'); process.exit(18); }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
 if (process.env.FAKE_NPM_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_NPM_DELAY_MS)));
 if (process.env.FAKE_NPM_FAIL) { console.error('fixture install failure'); process.exit(17); }
 mkdirSync('node_modules/typescript/bin', { recursive: true });
@@ -28,7 +35,7 @@ console.log('fixture install complete');
 `;
 
 async function fixture(): Promise<Fixture> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'one-eval plugin-runtime-'));
+  const directory = await mkdtemp(path.join(await realpath(tmpdir()), 'one-eval plugin-runtime-'));
   const plugin = path.join(directory, 'plugin source');
   const cache = path.join(directory, 'cache');
   const cwd = path.join(directory, 'caller work');
@@ -107,7 +114,7 @@ test('plugin setup installs only allowlisted inputs and delegates exact argument
     const installs = (await calls(f)).filter(call => call.args[0] === 'ci');
     assert.equal(installs.length, 1);
     assert.deepEqual(installs[0]!.args, ['ci', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund']);
-    assert.ok(installs[0]!.cwd.startsWith(f.cache));
+    assert.equal(path.dirname(installs[0]!.cwd), f.cache);
     assert.equal(response(await invoke(f, ['doctor'])).runtime.ready, true);
     const argumentsWithSyntax = ['schema', 'quote" and spaces', '$(touch unexpected)', 'a&b', 'Unicode 中文'];
     const delegated = response(await invoke(f, argumentsWithSyntax));
@@ -198,31 +205,44 @@ test('normal commands use a verified runtime even if npm later becomes unavailab
 
 test('concurrent setup cannot modify the same runtime while installation is running', async () => {
   const f = await fixture();
+  let first: Promise<Result> | undefined;
   try {
-    const first = invoke(f, ['setup'], { FAKE_NPM_DELAY_MS: '900' });
+    first = invoke(f, ['setup'], { FAKE_NPM_DELAY_MS: '900' });
     await waitForLock(f);
     const second = await invoke(f, ['setup']);
     assert.equal(second.code, 1);
     assert.match(second.stderr, /already locked/);
     assert.equal(response(await first).runtime.ready, true);
     assert.equal((await calls(f)).filter(call => call.args[0] === 'ci').length, 1);
-  } finally { await rm(f.directory, { recursive: true, force: true }); }
+  } finally { await first; await rm(f.directory, { recursive: true, force: true }); }
 });
 
 test('source changes during setup prevent activation and remove only the owned staging files', async () => {
   const f = await fixture();
+  const release = path.join(f.directory, 'release-npm');
+  let setup: Promise<Result> | undefined;
   try {
     await mkdir(f.cache);
     await writeFile(path.join(f.cache, 'unrelated-user-file'), 'preserve');
-    const setup = invoke(f, ['setup'], { FAKE_NPM_DELAY_MS: '500' });
-    await waitForLock(f);
+    setup = invoke(f, ['setup'], { FAKE_NPM_RELEASE_FILE: release });
+    // Mutate only once copying has finished and the fake install is waiting.
+    const deadline = Date.now() + 5000;
+    while (!(await calls(f)).some(call => call.args[0] === 'ci')) {
+      assert.ok(Date.now() < deadline, 'Fixture dependency installation did not start');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
     await writeFile(path.join(f.plugin, 'templates/offline/target.mjs'), 'export const changed = true;');
+    await writeFile(release, 'continue');
     const failed = await setup;
     assert.equal(failed.code, 1);
     assert.match(failed.stderr, /source changed/);
     assert.deepEqual(await readdir(f.cache), ['unrelated-user-file']);
     assert.equal(await readFile(path.join(f.cache, 'unrelated-user-file'), 'utf8'), 'preserve');
-  } finally { await rm(f.directory, { recursive: true, force: true }); }
+  } finally {
+    await writeFile(release, 'continue');
+    await setup;
+    await rm(f.directory, { recursive: true, force: true });
+  }
 });
 
 test('nested environment files are rejected before dependencies can be installed', async () => {
