@@ -34,6 +34,7 @@
     "docs/admission.md",
     "docs/integrations.md",
     "docs/distribution.md",
+    "docs/codex-plugin.md",
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
@@ -45,6 +46,7 @@
     "test:ci": "node scripts/test-suite.mjs all --strict",
     "prepare:ci": "node scripts/prepare-ci-benchmarks.mjs",
     "test:package": "node scripts/test-package.mjs",
+    "test:plugin": "node scripts/test-codex-plugin.mjs",
     "prepack": "npm run build",
     "start": "node dist/cli.js"
   },

@@ -1,0 +1,25 @@
+{
+  "name": "one-eval",
+  "version": "0.1.0",
+  "description": "Run isolated, repeatable evaluations and independently grade saved answers from Codex.",
+  "author": { "name": "okht", "url": "https://github.com/okht" },
+  "homepage": "https://github.com/okht/one-eval",
+  "repository": "https://github.com/okht/one-eval",
+  "license": "UNLICENSED",
+  "keywords": ["evaluation", "agents", "testing", "llm", "codex"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "one-eval",
+    "shortDescription": "Repeatable agent evaluations",
+    "longDescription": "Prepare datasets, connect models or agents, verify execution isolation, run repeated evaluations, calibrate graders, and report saved results using the one-eval CLI.",
+    "developerName": "okht",
+    "category": "Developer tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/okht/one-eval",
+    "defaultPrompt": [
+      "Use one-eval to evaluate this API against my dataset with three repeats per case.",
+      "Use one-eval to grade saved answers with my rubric without rerunning the target.",
+      "Use one-eval to compare two saved evaluation runs and explain the differences."
+    ]
+  }
+}

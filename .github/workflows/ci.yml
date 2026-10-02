@@ -38,4 +38,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:ci
+      - run: npm install --global --ignore-scripts @openai/codex@0.144.6
+      - run: npm run test:plugin
       - run: npm run test:package

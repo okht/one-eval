@@ -4,6 +4,17 @@ An agent-facing CLI and TypeScript library for isolated, repeatable evaluation o
 
 **Status: internal beta for technical users and external agents.** Promptfoo 0.123.1 provides provider integrations and batch scheduling. one-eval adds explicit isolation lifecycles, saved execution artifacts, independently versioned judging, and coverage-aware aggregation. CLI execution and grading require separate successful preflights by default.
 
+## Codex plugin
+
+Install the repository plugin to let Codex prepare and run evaluations through the same CLI:
+
+```sh
+codex plugin marketplace add okht/one-eval --ref main
+codex plugin add one-eval@one-eval-plugins
+```
+
+In a new chat, invoke `$one-eval:evaluate` or ask Codex to use one-eval with your dataset, target and repeat count. The plugin sets up its locked runtime in a separate cache on first use; evaluations retain formal admission and write artifacts into your project. Node.js 22.22+ and npm are required. See [plugin setup and usage](docs/codex-plugin.md). This is a repository marketplace plugin; it has not been submitted to the universal Plugins Directory.
+
 ## Offline quickstart
 
 Requires Node.js 22.22 or newer and npm. From this repository:
@@ -91,6 +102,8 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+`npm run test:plugin` additionally checks a clean plugin installation with the real Codex plugin manager and an offline formal evaluation. It requires Codex on PATH (or `ONE_EVAL_TEST_CODEX_BIN`) and network access for npm dependencies; it makes no model calls and uses an isolated Codex profile.
 
 Tests use local fixtures, loopback HTTP services and mocks; they do not establish isolation for a real remote service or validate the quality of a real LLM judge. `npm run test:ci` rejects skipped tests; `npm run prepare:ci` installs/verifies benchmark fixtures for a fresh checkout, and `npm run test:package` exercises a clean tarball installation. These checks do not call a paid model.
 
